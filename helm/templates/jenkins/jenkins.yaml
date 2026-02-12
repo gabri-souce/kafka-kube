@@ -90,12 +90,6 @@ data:
                 containers:
                   - name: "jnlp"
                     image: "jenkins/inbound-agent:latest"
-                    # --- FIX IDENTITÀ GIT SULL'AGENTE ---
-                    envVars:
-                      - envVar: { key: "GIT_AUTHOR_NAME", value: "Jenkins" }
-                      - envVar: { key: "GIT_COMMITTER_NAME", value: "Jenkins" }
-                      - envVar: { key: "GIT_AUTHOR_EMAIL", value: "jenkins@kafka-lab.local" }
-                      - envVar: { key: "GIT_COMMITTER_EMAIL", value: "jenkins@kafka-lab.local" }
                   - name: "kubectl"
                     image: "bitnami/kubectl:latest"
                     command: "cat"
@@ -103,51 +97,42 @@ data:
     unclassified:
       location:
         url: "http://localhost:32000/"
+      # --- CONFIGURAZIONE GIT GLOBALE (Sintassi corretta) ---
+      gitScm:
+        globalConfigName: "Jenkins Lab"
+        globalConfigEmail: "jenkins@kafka-lab.local"
     jobs:
       - script: >
           pipelineJob('01-Kafka-Manage-Topic') {
             definition {
-              cpsScmFlowDefinition {
+              cpsScm {
                 scm {
-                  gitSCM {
-                    userRemoteConfigs {
-                      userRemoteConfig {
-                        url('https://github.com/gabri-souce/kafka-kube.git')
-                        name('origin')
-                        refspec('+refs/heads/*:refs/remotes/origin/*')
-                      }
-                    }
-                    branches { branchSpec { name('*/main') } }
+                  git {
+                    remote { url('https://github.com/gabri-souce/kafka-kube.git') }
+                    branch('main')
                     extensions {
-                      # DISABILITA IL TAGGING AUTOMATICO
-                      perBuildTag(false)
+                      cloneOptions { shallow(true); depth(1); noTags(true) }
                     }
                   }
                 }
                 scriptPath('jenkins/pipelines/01-manage-topic.groovy')
-                lightweight(true)
               }
             }
           }
       - script: >
           pipelineJob('02-Kafka-Manage-User') {
             definition {
-              cpsScmFlowDefinition {
+              cpsScm {
                 scm {
-                  gitSCM {
-                    userRemoteConfigs {
-                      userRemoteConfig {
-                        url('https://github.com/gabri-souce/kafka-kube.git')
-                        name('origin')
-                        refspec('+refs/heads/*:refs/remotes/origin/*')
-                      }
+                  git {
+                    remote { url('https://github.com/gabri-souce/kafka-kube.git') }
+                    branch('main')
+                    extensions {
+                      cloneOptions { shallow(true); depth(1); noTags(true) }
                     }
-                    branches { branchSpec { name('*/main') } }
-                    extensions { perBuildTag(false) }
                   }
                 }
                 scriptPath('jenkins/pipelines/02-manage-user.groovy')
-                lightweight(true)
               }
             }
           }
@@ -155,22 +140,17 @@ data:
           pipelineJob('03-Kafka-Cluster-Health') {
             triggers { cron('H/30 * * * *') }
             definition {
-              cpsScmFlowDefinition {
+              cpsScm {
                 scm {
-                  gitSCM {
-                    userRemoteConfigs {
-                      userRemoteConfig {
-                        url('https://github.com/gabri-souce/kafka-kube.git')
-                        name('origin')
-                        refspec('+refs/heads/*:refs/remotes/origin/*')
-                      }
+                  git {
+                    remote { url('https://github.com/gabri-souce/kafka-kube.git') }
+                    branch('main')
+                    extensions {
+                      cloneOptions { shallow(true); depth(1); noTags(true) }
                     }
-                    branches { branchSpec { name('*/main') } }
-                    extensions { perBuildTag(false) }
                   }
                 }
                 scriptPath('jenkins/pipelines/03-cluster-health.groovy')
-                lightweight(true)
               }
             }
           }
@@ -205,14 +185,6 @@ spec:
           env:
             - name: JAVA_OPTS
               value: "-Djenkins.install.runSetupWizard=false -Xmx1536m -Xms512m -Djenkins.model.Jenkins.slaveAgentPort=50000"
-            - name: GIT_AUTHOR_NAME
-              value: "Jenkins"
-            - name: GIT_AUTHOR_EMAIL
-              value: "jenkins@kafka-lab.local"
-            - name: GIT_COMMITTER_NAME
-              value: "Jenkins"
-            - name: GIT_COMMITTER_EMAIL
-              value: "jenkins@kafka-lab.local"
             - name: CASC_JENKINS_CONFIG
               value: "/var/jenkins_config/casc.yaml"
             - name: JENKINS_ADMIN_PASSWORD
