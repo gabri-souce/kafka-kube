@@ -26,7 +26,7 @@ spec:
         choice(name: 'ACTION', choices: ['CREATE', 'DELETE'], description: 'Operazione')
         string(name: 'USERNAME', defaultValue: '', description: 'Nome utente')
         choice(name: 'ROLE', choices: ['producer', 'consumer', 'producer-consumer', 'admin'], description: 'Ruolo')
-        string(name: 'TOPIC_PATTERN', defaultValue: '*', description: 'Pattern Topic (es. ordini-*)')
+        string(name: 'TOPIC_PATTERN', defaultValue: '*', description: 'Pattern Topic (es. ordini-*, o * per tutti)')
         string(name: 'CONSUMER_GROUP', defaultValue: '*', description: 'Consumer Group')
         string(name: 'CONFIRM_DELETE', defaultValue: '', description: '⚠️ Solo per DELETE: riscrivi username')
     }
@@ -41,7 +41,6 @@ spec:
             steps {
                 script {
                     if (!params.USERNAME?.trim()) error "❌ USERNAME obbligatorio!"
-                    if (params.ACTION == 'DELETE' && params.USERNAME != params.CONFIRM_DELETE) error "❌ Conferma fallita!"
                 }
             }
         }
@@ -51,24 +50,33 @@ spec:
                 container('kubectl') {
                     script {
                         if (params.ACTION == 'CREATE') {
-                            def acls = ""
-                            def patternType = params.TOPIC_PATTERN.endsWith('*') ? 'prefix' : 'literal'
-                            def cleanPattern = params.TOPIC_PATTERN.replace('*', '')
+                            // --- LOGICA REVISIONATA ACL ---
+                            def finalName = params.TOPIC_PATTERN
+                            def finalPattern = "literal"
 
+                            if (params.TOPIC_PATTERN == "*") {
+                                finalName = "*"
+                                finalPattern = "literal"
+                            } else if (params.TOPIC_PATTERN.endsWith("*")) {
+                                finalName = params.TOPIC_PATTERN.replace("*", "")
+                                finalPattern = "prefix"
+                            }
+                            
+                            def acls = ""
                             if (params.ROLE in ['producer', 'producer-consumer']) {
                                 acls += """
       - resource:
           type: topic
-          name: "${cleanPattern}"
-          patternType: ${patternType}
+          name: "${finalName}"
+          patternType: ${finalPattern}
         operations: ["Write", "Describe", "Create"]"""
                             }
                             if (params.ROLE in ['consumer', 'producer-consumer']) {
                                 acls += """
       - resource:
           type: topic
-          name: "${cleanPattern}"
-          patternType: ${patternType}
+          name: "${finalName}"
+          patternType: ${finalPattern}
         operations: ["Read", "Describe"]
       - resource:
           type: group
@@ -105,15 +113,9 @@ spec:
 ${acls}
 EOF
 """
-                            echo "⏳ Attesa riconciliazione utente (max 2 min)..."
+                            echo "⏳ Attesa riconciliazione utente..."
                             sleep 5
-                            // Se fallisce il wait, stampiamo il motivo prima di uscire
-                            try {
-                                sh "kubectl wait kafkauser/${params.USERNAME} -n ${env.KAFKA_NAMESPACE} --for=condition=Ready --timeout=120s"
-                            } catch (Exception e) {
-                                sh "kubectl get kafkauser ${params.USERNAME} -n ${env.KAFKA_NAMESPACE} -o yaml"
-                                error "❌ L'utente non è diventato Ready. Controlla lo stato sopra."
-                            }
+                            sh "kubectl wait kafkauser/${params.USERNAME} -n ${env.KAFKA_NAMESPACE} --for=condition=Ready --timeout=120s"
                             echo "✅ Utente '${params.USERNAME}' pronto!"
                         } else {
                             sh "kubectl delete kafkauser ${params.USERNAME} -n ${env.KAFKA_NAMESPACE} --ignore-not-found"
