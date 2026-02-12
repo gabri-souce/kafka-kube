@@ -1,0 +1,320 @@
+global:
+  namespace: kafka-lab
+
+# ============================================
+# VAULT SECRET MANAGEMENT
+# ============================================
+# HashiCorp Vault per gestione centralizzata dei secret
+# Modalità: External Secrets Operator (ESO)
+vault:
+  enabled: true
+  # Indirizzo del server Vault (modifica in base al tuo ambiente)
+  address: "http://vault.vault-system.svc.cluster.local:8200"
+  # Path KV engine per i secret Kafka
+  # IMPORTANTE: NON includere /data/ - Vault KV v2 lo aggiunge automaticamente
+  kvPath: "secret"
+  # Authentication method: kubernetes (recommended in prod)
+  auth:
+    method: kubernetes
+    # Service Account per autenticazione con Vault
+    serviceAccount: vault-auth
+    # Role configurato in Vault per questo namespace
+    role: kafka-lab
+  # Refresh interval per i secret (default: 1h)
+  refreshInterval: 1h
+
+# Strimzi Kafka Cluster (KRaft mode - no ZooKeeper)
+kafka:
+  enabled: true
+  name: kafka-cluster
+  version: "4.0.0"
+  
+  # KRaft Node Pool settings
+  nodePool:
+    name: kafka
+    replicas: 3
+    # Roles: controller, broker, or both
+    roles:
+      - controller
+      - broker
+    storage:
+      type: persistent-claim
+      size: 5Gi
+      deleteClaim: true
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+  
+  # Listeners
+  listeners:
+    plain:
+      enabled: true
+      port: 9092
+    tls:
+      enabled: true
+      port: 9093
+      authentication: scram-sha-512
+  
+  # Kafka Config
+  config:
+    offsetsTopicReplicationFactor: 3
+    transactionStateLogReplicationFactor: 3
+    transactionStateLogMinIsr: 2
+    defaultReplicationFactor: 3
+    minInsyncReplicas: 2
+
+# Kafka Users (SCRAM-SHA-512)
+# ⚠️  Le password NON sono più hardcoded qui
+# ⚠️  Vengono recuperate da Vault tramite External Secrets
+kafkaUsers:
+  - name: admin
+    type: scram-sha-512
+    # Secret path in Vault: secret/data/kafka/users/admin
+    vaultSecretPath: kafka/users/admin
+    acls:
+      - resource:
+          type: topic
+          name: "*"
+          patternType: literal
+        operations: ["All"]
+      - resource:
+          type: group
+          name: "*"
+          patternType: literal
+        operations: ["All"]
+      - resource:
+          type: cluster
+        operations: ["All"]
+  - name: producer-user
+    type: scram-sha-512
+    # Secret path in Vault: secret/data/kafka/users/producer-user
+    vaultSecretPath: kafka/users/producer-user
+    acls:
+      - resource:
+          type: topic
+          name: "*"
+          patternType: literal
+        operations: ["Write", "Describe", "Create"]
+  - name: consumer-user
+    type: scram-sha-512
+    # Secret path in Vault: secret/data/kafka/users/consumer-user
+    vaultSecretPath: kafka/users/consumer-user
+    acls:
+      - resource:
+          type: topic
+          name: "*"
+          patternType: literal
+        operations: ["Read", "Describe"]
+      - resource:
+          type: group
+          name: "*"
+          patternType: literal
+        operations: ["Read"]
+
+# ============================================
+# KAFKA CONNECT
+# ============================================
+# Framework per integrare Kafka con sistemi esterni
+# Source Connector: importa dati da DB/File/API → Kafka
+# Sink Connector: esporta dati da Kafka → DB/Elasticsearch/S3
+kafkaConnect:
+  enabled: true
+  name: kafka-connect
+  replicas: 1
+  
+  # Build customizzato dell'immagine con connettori aggiuntivi
+  # Richiede un registry Docker accessibile dal cluster
+  build:
+    enabled: false
+    output:
+      image: my-registry/kafka-connect:latest
+      pushSecret: docker-registry-credentials
+    # Plugin/Connettori da includere nell'immagine
+    plugins:
+      # Debezium per CDC (Change Data Capture) da PostgreSQL
+      - name: debezium-postgres
+        artifacts:
+          - type: maven
+            group: io.debezium
+            artifact: debezium-connector-postgres
+            version: 2.5.0.Final
+      # Connettore JDBC generico
+      - name: jdbc-connector
+        artifacts:
+          - type: maven
+            group: io.confluent
+            artifact: kafka-connect-jdbc
+            version: 10.7.4
+      # Connettore per Elasticsearch
+      - name: elasticsearch-connector
+        artifacts:
+          - type: maven
+            group: io.confluent
+            artifact: kafka-connect-elasticsearch
+            version: 14.0.12
+      # Connettore per S3
+      - name: s3-connector
+        artifacts:
+          - type: maven
+            group: io.confluent
+            artifact: kafka-connect-s3
+            version: 10.5.7
+  
+  # Configurazione del cluster Connect
+  config:
+    # Converters - come serializzare chiavi e valori
+    # Opzioni: org.apache.kafka.connect.json.JsonConverter,
+    #          io.confluent.connect.avro.AvroConverter,
+    #          org.apache.kafka.connect.storage.StringConverter
+    keyConverter: org.apache.kafka.connect.json.JsonConverter
+    valueConverter: org.apache.kafka.connect.json.JsonConverter
+    keyConverterSchemasEnable: false
+    valueConverterSchemasEnable: false
+    # Replication factor per i topic interni di Connect
+    replicationFactor: 3
+    # Configurazioni aggiuntive
+    additional:
+      # Numero massimo di task per worker
+      tasks.max: "10"
+      # Intervallo di polling per i source connector
+      offset.flush.interval.ms: "10000"
+  
+  # Risorse del pod
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  
+  # Logging
+  logging:
+    rootLevel: INFO
+  
+  # Connector di esempio (decommentare per abilitarli)
+  connectors: []
+  # Esempio 1: FileStreamSource - legge da file e scrive su Kafka
+  # - name: file-source-connector
+  #   class: org.apache.kafka.connect.file.FileStreamSourceConnector
+  #   tasksMax: 1
+  #   autoRestart:
+  #     enabled: true
+  #     maxRestarts: 5
+  #   config:
+  #     file: /tmp/test-input.txt
+  #     topic: file-source-topic
+  
+  # Esempio 2: FileStreamSink - legge da Kafka e scrive su file
+  # - name: file-sink-connector
+  #   class: org.apache.kafka.connect.file.FileStreamSinkConnector
+  #   tasksMax: 1
+  #   config:
+  #     file: /tmp/test-output.txt
+  #     topics: file-source-topic
+  
+  # Esempio 3: Debezium PostgreSQL CDC (richiede build con plugin)
+  # - name: postgres-cdc-connector
+  #   class: io.debezium.connector.postgresql.PostgresConnector
+  #   tasksMax: 1
+  #   config:
+  #     database.hostname: postgres-service
+  #     database.port: "5432"
+  #     database.user: postgres
+  #     database.password: password
+  #     database.dbname: mydb
+  #     database.server.name: dbserver1
+  #     plugin.name: pgoutput
+  #     slot.name: debezium
+  #     publication.name: dbz_publication
+
+# Kafka UI
+kafkaUi:
+  enabled: true
+  image: provectuslabs/kafka-ui:latest
+  service:
+    type: NodePort
+    nodePort: 30080
+
+# Monitoring
+monitoring:
+  enabled: true
+  prometheus:
+    image: prom/prometheus:latest
+    service:
+      type: NodePort
+      nodePort: 30090
+  grafana:
+    image: grafana/grafana:latest
+    service:
+      type: NodePort
+      nodePort: 30030
+    # Password recuperata da Vault
+    # Secret path: secret/data/kafka/monitoring/grafana
+    vaultSecretPath: kafka/monitoring/grafana
+
+# AWX
+awx:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 30043
+
+# ============================================
+# JENKINS CI/CD
+# ============================================
+# Jenkins per automatizzare le operazioni Kafka:
+# - Deploy Topic via Pipeline
+# - Gestione Utenti e ACL
+# - Health Check automatici
+# - Consumer Lag Monitoring
+jenkins:
+  enabled: true
+  namespace: jenkins
+  
+  # Immagine Jenkins
+  image: gabrisource/jenkins-kafka:1.0.0
+  
+  # Credenziali admin recuperate da Vault
+  # Secret path: secret/data/kafka/jenkins/admin
+  vaultSecretPath: kafka/jenkins/admin
+  
+  # Servizio
+  service:
+    type: NodePort
+    nodePort: 32000    # Accesso: http://<node-ip>:32000
+  
+  # Storage persistente
+  persistence:
+    size: 10Gi
+    # storageClass: ""  # Usa default se non specificato
+  
+  # Risorse
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "3Gi"
+      cpu: "1000m"
+  
+  # Jobs pre-configurati (creati automaticamente)
+  # Questi job sono definiti nel ConfigMap jenkins-casc-config
+  jobs:
+    # Job per creare topic
+    deployTopic:
+      enabled: true
+    # Job per creare utenti
+    deployUser:
+      enabled: true
+    # Health check periodico
+    healthCheck:
+      enabled: true
+      schedule: "H/30 * * * *"  # Ogni 30 minuti
+    # Monitor consumer lag
+    consumerLag:
+      enabled: true

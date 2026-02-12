@@ -1,0 +1,15 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnector
+metadata:
+  name: file-source
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-connect
+spec:
+  class: org.apache.kafka.connect.file.FileStreamSourceConnector
+  tasksMax: 1
+  autoRestart:
+    enabled: true
+  config:
+    file: /tmp/input.txt
+    topic: file-input-topic

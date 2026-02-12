@@ -1,0 +1,139 @@
+# Debezium PostgreSQL CDC Connector
+#
+# Change Data Capture (CDC) da PostgreSQL a Kafka.
+# Cattura INSERT, UPDATE, DELETE in tempo reale e li pubblica su topic Kafka.
+#
+# PREREQUISITI:
+# 1. Build dell'immagine Kafka Connect con plugin Debezium abilitato (vedi values.yaml)
+# 2. PostgreSQL configurato per la replicazione logica:
+#    - wal_level = logical
+#    - max_replication_slots >= 1
+#    - max_wal_senders >= 1
+#
+# Applicare con: kubectl apply -f debezium-postgres-connector.yaml
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnector
+metadata:
+  name: postgres-cdc-orders
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-connect
+    app.kubernetes.io/component: cdc
+spec:
+  class: io.debezium.connector.postgresql.PostgresConnector
+  tasksMax: 1
+  
+  autoRestart:
+    enabled: true
+    maxRestarts: 10
+  
+  config:
+    # ========================================
+    # CONNESSIONE DATABASE
+    # ========================================
+    database.hostname: "postgres-service"
+    database.port: "5432"
+    database.user: "debezium"
+    database.password: "${secrets:kafka-lab/postgres-credentials:password}"  # Secret reference
+    database.dbname: "ecommerce"
+    
+    # Nome logico del server (usato nei nomi dei topic)
+    topic.prefix: "cdc.ecommerce"
+    
+    # ========================================
+    # CONFIGURAZIONE REPLICAZIONE
+    # ========================================
+    # Plugin di decodifica (pgoutput è nativo da PG 10+)
+    plugin.name: "pgoutput"
+    
+    # Slot di replicazione (verrà creato se non esiste)
+    slot.name: "debezium_orders_slot"
+    
+    # Publication PostgreSQL (verrà creata se non esiste)
+    publication.name: "dbz_publication"
+    publication.autocreate.mode: "filtered"
+    
+    # ========================================
+    # FILTRI TABELLE
+    # ========================================
+    # Schema e tabelle da monitorare
+    schema.include.list: "public"
+    table.include.list: "public.orders,public.order_items,public.customers"
+    
+    # Colonne da escludere (es. dati sensibili)
+    # column.exclude.list: "public.customers.credit_card"
+    
+    # ========================================
+    # FORMATO MESSAGGI
+    # ========================================
+    # Chiave del messaggio (colonne PK della tabella)
+    key.converter: "org.apache.kafka.connect.json.JsonConverter"
+    key.converter.schemas.enable: "true"
+    
+    # Valore del messaggio (payload con before/after)
+    value.converter: "org.apache.kafka.connect.json.JsonConverter"
+    value.converter.schemas.enable: "true"
+    
+    # ========================================
+    # SNAPSHOT INIZIALE
+    # ========================================
+    # Modalità snapshot all'avvio
+    # - initial: snapshot completo + streaming
+    # - never: solo streaming (no snapshot)
+    # - when_needed: snapshot se necessario
+    snapshot.mode: "initial"
+    
+    # ========================================
+    # HEARTBEAT (per mantenere lo slot attivo)
+    # ========================================
+    heartbeat.interval.ms: "10000"
+    heartbeat.action.query: "SELECT 1"
+    
+    # ========================================
+    # ERROR HANDLING
+    # ========================================
+    errors.tolerance: "all"
+    errors.deadletterqueue.topic.name: "cdc.dlq.postgres-orders"
+    errors.deadletterqueue.topic.replication.factor: "3"
+    errors.deadletterqueue.context.headers.enable: "true"
+    errors.log.enable: "true"
+    errors.log.include.messages: "true"
+    
+    # ========================================
+    # TRANSFORMS (opzionale)
+    # ========================================
+    # Esempio: estrai solo il payload senza envelope Debezium
+    # transforms: "unwrap"
+    # transforms.unwrap.type: "io.debezium.transforms.ExtractNewRecordState"
+    # transforms.unwrap.drop.tombstones: "false"
+    # transforms.unwrap.delete.handling.mode: "rewrite"
+
+---
+# Secret per le credenziali del database
+# NOTA: In produzione, usa Sealed Secrets o External Secrets Operator
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: kafka-lab
+type: Opaque
+stringData:
+  username: debezium
+  password: debezium-password-change-me
+
+---
+# Topic per Dead Letter Queue
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: cdc.dlq.postgres-orders
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster
+spec:
+  partitions: 1
+  replicas: 3
+  config:
+    retention.ms: "2592000000"  # 30 giorni
+    cleanup.policy: "delete"

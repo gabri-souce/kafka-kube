@@ -1,0 +1,75 @@
+{{- if .Values.kafkaConnect.enabled }}
+# Kafka User
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: kafka-connect
+  namespace: {{ include "kafka-lab.namespace" . }}
+  labels:
+    strimzi.io/cluster: {{ .Values.kafka.name }}
+spec:
+  authentication: { type: scram-sha-512 }
+  authorization:
+    type: simple
+    acls:
+      - resource: {type: topic, name: "*", patternType: literal}
+        operations: [All]
+      - resource: {type: group, name: "*", patternType: literal}
+        operations: [All]
+      - resource: {type: cluster}
+        operations: [All]
+
+---
+# KAFKA CONNECT CON BUILD CORRETTO
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnect
+metadata:
+  name: kafka-connect
+  namespace: {{ include "kafka-lab.namespace" . }}
+  annotations:
+    strimzi.io/use-connector-resources: "true"
+spec:
+  version: 4.0.0
+  replicas: 1
+  bootstrapServers: {{ .Values.kafka.name }}-kafka-bootstrap:9093
+  
+  # --- LA FABBRICA ---
+  build:
+    output:
+      type: docker
+      # Cambiamo il nome dell'immagine per forzare Kubernetes a scaricarla nuova
+      image: ttl.sh/kafka-lab-connect-final-{{ .Values.kafka.name }}:2h
+    plugins:
+      - name: kafka-connect-file
+        artifacts:
+          - type: maven
+            group: org.apache.kafka
+            artifact: connect-file  # <--- NOME CORRETTO SU MAVEN
+            version: 3.8.0         # <--- VERSIONE SICURA
+  # --------------------
+
+  groupId: connect-cluster
+  offsetStorageTopic: connect-cluster-offsets
+  configStorageTopic: connect-cluster-configs
+  statusStorageTopic: connect-cluster-status
+  
+  tls:
+    trustedCertificates:
+      - secretName: {{ .Values.kafka.name }}-cluster-ca-cert
+        certificate: ca.crt
+  
+  authentication:
+    type: scram-sha-512
+    username: kafka-connect
+    passwordSecret:
+      secretName: kafka-connect
+      password: password
+  
+  config:
+    offset.storage.replication.factor: 1
+    config.storage.replication.factor: 1
+    status.storage.replication.factor: 1
+    key.converter: org.apache.kafka.connect.json.JsonConverter
+    value.converter: org.apache.kafka.connect.json.JsonConverter
+{{- end }}

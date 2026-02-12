@@ -1,0 +1,123 @@
+{{- if .Values.monitoring.enabled }}
+# ============================================================================
+# EXTERNAL SECRET per Grafana Admin Password
+# ============================================================================
+{{- if .Values.vault.enabled }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: grafana-admin-secret
+  namespace: {{ include "kafka-lab.namespace" . }}
+  labels:
+    {{- include "kafka-lab.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+spec:
+  refreshInterval: {{ .Values.vault.refreshInterval | default "1h" }}
+  secretStoreRef:
+    name: vault-backend
+    kind: SecretStore
+  target:
+    name: grafana-admin-secret
+    creationPolicy: Owner
+    template:
+      type: Opaque
+      data:
+        admin-password: "{{ `{{ .password }}` }}"
+  data:
+    - secretKey: password
+      remoteRef:
+        key: {{ .Values.monitoring.grafana.vaultSecretPath }}
+        property: password
+{{- end }}
+
+---
+# ============================================================================
+# GRAFANA DATASOURCES CONFIGMAP
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: {{ include "kafka-lab.namespace" . }}
+  labels:
+    {{- include "kafka-lab.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ include "kafka-lab.namespace" . }}
+  labels:
+    app: grafana
+    {{- include "kafka-lab.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: {{ .Values.monitoring.grafana.image }}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              {{- if .Values.vault.enabled }}
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin-secret
+                  key: admin-password
+              {{- else }}
+              value: "changeme"
+              {{- end }}
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: {{ include "kafka-lab.namespace" . }}
+  labels:
+    app: grafana
+    {{- include "kafka-lab.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.monitoring.grafana.service.type }}
+  ports:
+    - port: 3000
+      targetPort: 3000
+      {{- if eq .Values.monitoring.grafana.service.type "NodePort" }}
+      nodePort: {{ .Values.monitoring.grafana.service.nodePort }}
+      {{- end }}
+  selector:
+    app: grafana
+{{- end }}

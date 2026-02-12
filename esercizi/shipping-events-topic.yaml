@@ -1,0 +1,13 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: shipping-events
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster
+    team: shipping
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: "604800000"

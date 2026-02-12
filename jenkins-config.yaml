@@ -1,0 +1,67 @@
+jenkins:
+  systemMessage: "🚀 Kafka Lab Automation - Managed by JCasC"
+  numExecutors: 0 
+  mode: EXCLUSIVE
+  scmCheckoutRetryCount: 3
+  
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  clouds:
+    - kubernetes:
+        name: "kubernetes"
+        serverUrl: "https://kubernetes.default.svc"
+        skipTlsVerify: true
+        namespace: "kafka-lab"
+        jenkinsUrl: "http://jenkins.kafka-lab.svc.cluster.local:8080"
+        templates:
+          - name: "kafka-agent"
+            label: "kafka-agent"
+            nodeUsageMode: "NORMAL"
+            containers:
+              - name: "jnlp"
+                image: "jenkins/inbound-agent:latest"
+                workingDir: "/home/jenkins/agent"
+              - name: "kubectl"
+                image: "bitnami/kubectl:latest"
+                command: "cat"
+                ttyEnabled: true
+              - name: "ansible"
+                image: "cytopia/ansible:latest"
+                command: "cat"
+                ttyEnabled: true
+
+jobs:
+  - script: >
+      pipelineJob('Kafka-Management-Pipeline') {
+        definition {
+          cps {
+            script("""
+              pipeline {
+                agent { label 'kafka-agent' }
+                stages {
+                  stage('Init') {
+                    steps {
+                      container('kubectl') {
+                        sh 'kubectl get pods -n kafka-lab'
+                      }
+                    }
+                  }
+                }
+              }
+            """.stripIndent())
+          }
+        }
+      }
+
+unclassified:
+  location:
+    url: "http://localhost:32000/"

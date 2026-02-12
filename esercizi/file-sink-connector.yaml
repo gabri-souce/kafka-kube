@@ -1,0 +1,37 @@
+# FileStreamSink Connector
+#
+# Questo connector legge messaggi da topic Kafka e li scrive su un file.
+# È incluso di default in Kafka Connect ed è utile per demo e test.
+#
+# Applicare con: kubectl apply -f file-sink-connector.yaml
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnector
+metadata:
+  name: file-sink-demo
+  namespace: kafka-lab
+  labels:
+    # IMPORTANTE: deve corrispondere al nome del KafkaConnect cluster
+    strimzi.io/cluster: kafka-connect
+spec:
+  # Classe del connector (inclusa in Kafka Connect)
+  class: org.apache.kafka.connect.file.FileStreamSinkConnector
+  
+  # Numero di task paralleli
+  tasksMax: 1
+  
+  # Auto-restart in caso di errore
+  autoRestart:
+    enabled: true
+    maxRestarts: 5
+  
+  # Configurazione del connector
+  config:
+    # File di destinazione (verrà creato nel pod Connect)
+    file: "/tmp/sink-output.txt"
+    
+    # Topic Kafka da cui leggere (può essere una lista separata da virgole)
+    topics: "file-source-events"
+    
+    # Consumer group id (opzionale, auto-generato se non specificato)
+    # consumer.override.group.id: "file-sink-consumer-group"

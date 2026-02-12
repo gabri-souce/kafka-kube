@@ -1,0 +1,15 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: inventory-movements
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster    # Collega il topic al nostro cluster
+    team: inventory                       # Label per identificare chi "possiede" il topic
+spec:
+  partitions: 6                           # 6 consumer possono leggere in parallelo
+  replicas: 3                             # Dati replicati su 3 broker (fault tolerance)
+  config:
+    retention.ms: "1209600000"            # 14 giorni in millisecondi
+    cleanup.policy: "delete"              # Elimina i messaggi vecchi (alternativa: "compact")
+    min.insync.replicas: "2"              # Almeno 2 repliche devono confermare la scrittura

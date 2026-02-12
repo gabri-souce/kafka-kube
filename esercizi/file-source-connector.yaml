@@ -1,0 +1,50 @@
+# FileStreamSource Connector
+# 
+# Questo connector legge righe da un file e le pubblica su un topic Kafka.
+# È incluso di default in Kafka Connect ed è utile per demo e test.
+#
+# Applicare con: kubectl apply -f file-source-connector.yaml
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnector
+metadata:
+  name: file-source-demo
+  namespace: kafka-lab
+  labels:
+    # IMPORTANTE: deve corrispondere al nome del KafkaConnect cluster
+    strimzi.io/cluster: kafka-connect
+spec:
+  # Classe del connector (inclusa in Kafka Connect)
+  class: org.apache.kafka.connect.file.FileStreamSourceConnector
+  
+  # Numero di task paralleli (1 per FileStream)
+  tasksMax: 1
+  
+  # Auto-restart in caso di errore
+  autoRestart:
+    enabled: true
+    maxRestarts: 5
+  
+  # Configurazione del connector
+  config:
+    # File da leggere (deve esistere nel pod Connect)
+    file: "/tmp/source-input.txt"
+    
+    # Topic Kafka su cui pubblicare
+    topic: "file-source-events"
+
+---
+# Topic per ricevere i messaggi dal connector
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: file-source-events
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"  # 7 giorni
+    cleanup.policy: "delete"

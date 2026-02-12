@@ -1,0 +1,177 @@
+# ============================================
+# TOPIC 1: analytics-events
+# Riceve dati grezzi dal collector
+# 12 partizioni per alto throughput
+# 30 giorni retention per analisi storiche
+# ============================================
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: analytics-events
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster
+    team: analytics
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: "2592000000"
+    min.insync.replicas: "2"
+---
+# ============================================
+# TOPIC 2: analytics-aggregates
+# Dati elaborati, meno volume ma più importanti
+# 6 partizioni bastano
+# 90 giorni retention per report trimestrali
+# ============================================
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: analytics-aggregates
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster
+    team: analytics
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: "7776000000"
+    min.insync.replicas: "2"
+---
+# ============================================
+# USER 1: analytics-collector
+# Può solo SCRIVERE su analytics-events
+# Principio least privilege: niente altro
+# ============================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: analytics-collector-password
+  namespace: kafka-lab
+type: Opaque
+stringData:
+  password: "AnalyticsCollector2026!"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: analytics-collector
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: analytics-collector-password
+          key: password
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: analytics-events
+          patternType: literal
+        operations: [Write, Describe]
+        host: "*"
+---
+# ============================================
+# USER 2: analytics-processor
+# Legge da analytics-events
+# Scrive su analytics-aggregates
+# Ha bisogno anche del consumer group
+# ============================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: analytics-processor-password
+  namespace: kafka-lab
+type: Opaque
+stringData:
+  password: "AnalyticsProcessor2026!"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: analytics-processor
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: analytics-processor-password
+          key: password
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: analytics-events
+          patternType: literal
+        operations: [Read, Describe]
+        host: "*"
+      - resource:
+          type: topic
+          name: analytics-aggregates
+          patternType: literal
+        operations: [Write, Describe]
+        host: "*"
+      - resource:
+          type: group
+          name: analytics-processor-group
+          patternType: literal
+        operations: [Read]
+        host: "*"
+---
+# ============================================
+# USER 3: analytics-reader
+# Solo lettura da analytics-aggregates
+# Per dashboard e report
+# ============================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: analytics-reader-password
+  namespace: kafka-lab
+type: Opaque
+stringData:
+  password: "AnalyticsReader2026!"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: analytics-reader
+  namespace: kafka-lab
+  labels:
+    strimzi.io/cluster: kafka-cluster
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: analytics-reader-password
+          key: password
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: analytics-aggregates
+          patternType: literal
+        operations: [Read, Describe]
+        host: "*"
+      - resource:
+          type: group
+          name: analytics-reader-group
+          patternType: literal
+        operations: [Read]
+        host: "*"

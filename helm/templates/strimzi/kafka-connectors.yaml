@@ -1,0 +1,27 @@
+{{- if .Values.kafkaConnect.enabled }}
+{{- range .Values.kafkaConnect.connectors }}
+---
+# KafkaConnector: {{ .name }}
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnector
+metadata:
+  name: {{ .name }}
+  namespace: {{ include "kafka-lab.namespace" $ }}
+  labels:
+    # IMPORTANTE: Deve corrispondere al nome del KafkaConnect cluster
+    strimzi.io/cluster: {{ $.Values.kafkaConnect.name }}
+    {{- include "kafka-lab.labels" $ | nindent 4 }}
+spec:
+  class: {{ .class }}
+  tasksMax: {{ .tasksMax | default 1 }}
+  {{- if .autoRestart }}
+  autoRestart:
+    enabled: {{ .autoRestart.enabled | default true }}
+    maxRestarts: {{ .autoRestart.maxRestarts | default 5 }}
+  {{- end }}
+  config:
+    {{- range $key, $value := .config }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+{{- end }}
+{{- end }}
