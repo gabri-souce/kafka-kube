@@ -54,7 +54,7 @@ echo
 # ============================================================================
 echo -e "${BLUE}[1/7] Verifica prerequisiti...${NC}"
 
-for cmd in kubectl helm; do
+for cmd in kubectl helm docker; do
     if ! command -v $cmd &> /dev/null; then
         echo -e "${RED}❌ $cmd non trovato${NC}"
         exit 1
@@ -67,6 +67,67 @@ if ! command -v vault &> /dev/null; then
 fi
 
 echo -e "${GREEN}✓ Prerequisiti OK${NC}"
+echo
+
+# ============================================================================
+# BUILD IMMAGINI DOCKER (se non esistono su Docker Hub)
+# ============================================================================
+echo -e "${BLUE}[1b/7] Verifica immagini Docker...${NC}"
+
+DOCKER_USER="gabrisource"
+JENKINS_IMAGE="${DOCKER_USER}/jenkins-kafka:1.0.0"
+AWX_EE_IMAGE="${DOCKER_USER}/kafka-ee:1.0.0"
+
+build_and_push_image() {
+    local IMAGE=$1
+    local CONTEXT=$2
+    local NAME=$3
+
+    echo -n "  Verifico ${NAME} (${IMAGE})... "
+
+    # Controlla se esiste già su Docker Hub
+    if docker manifest inspect "${IMAGE}" &>/dev/null; then
+        echo -e "${GREEN}✓ Già presente su Docker Hub${NC}"
+        return 0
+    fi
+
+    # Non esiste - controlla se esiste localmente
+    if docker image inspect "${IMAGE}" &>/dev/null; then
+        echo -e "${YELLOW}↑ Presente solo in locale, push in corso...${NC}"
+        docker push "${IMAGE}" > /dev/null
+        echo -e "${GREEN}✓ Push completato${NC}"
+        return 0
+    fi
+
+    # Non esiste da nessuna parte - build + push
+    echo -e "${YELLOW}⚙️  Non trovata, build in corso...${NC}"
+    echo -e "  ${CYAN}(Prima esecuzione: può richiedere 5-10 minuti)${NC}"
+
+    if docker build -t "${IMAGE}" "${CONTEXT}" ; then
+        echo -n "  Push su Docker Hub... "
+        docker push "${IMAGE}" > /dev/null
+        echo -e "${GREEN}✓ Build e push completati${NC}"
+    else
+        echo -e "${RED}❌ Build fallita per ${NAME}${NC}"
+        exit 1
+    fi
+}
+
+# Verifica login Docker Hub
+echo -n "  Verifico login Docker Hub... "
+if ! docker info 2>/dev/null | grep -q "Username"; then
+    echo -e "${YELLOW}⚠️  Non loggato, eseguo login...${NC}"
+    docker login
+fi
+echo -e "${GREEN}✓${NC}"
+
+# Build Jenkins con plugin
+build_and_push_image "${JENKINS_IMAGE}" "./jenkins" "Jenkins+plugin"
+
+# Build AWX Execution Environment
+build_and_push_image "${AWX_EE_IMAGE}" "./awx-ee" "AWX Execution Environment"
+
+echo -e "${GREEN}✓ Immagini Docker pronte${NC}"
 echo
 
 # ============================================================================
@@ -361,7 +422,16 @@ echo -e "${GREEN}  📊 Kafka UI:${NC}    http://localhost:30080"
 echo -e "${GREEN}  📈 Grafana:${NC}     http://localhost:30030  (admin / ${APP_PASSWORD})"
 echo -e "${GREEN}  🔧 Jenkins:${NC}     http://localhost:32000  (admin / ${APP_PASSWORD})"
 echo -e "${GREEN}  🔭 Prometheus:${NC}  http://localhost:30090"
-echo -e "${GREEN}  ⚙️  AWX:${NC}         http://localhost:30880  (admin / ${APP_PASSWORD})"
+echo -e "${GREEN}  ⚙️  AWX:${NC}         http://localhost:30043"
+echo
+AWX_PASS=$(kubectl get secret awx-admin-password -n ${KAFKA_NAMESPACE} -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "recupera con: kubectl get secret awx-admin-password -n kafka-lab -o jsonpath='{.data.password}' | base64 -d")
+echo -e "${YELLOW}  AWX Password:${NC} ${AWX_PASS}"
+echo
+echo -e "${YELLOW}  📄 Credenziali salvate in: ${CYAN}${PWD_FILE}${NC}"
+echo
+echo -e "${CYAN}  ℹ️  AWX Execution Environment già pushato: gabrisource/kafka-ee:1.0.0${NC}"
+echo -e "${CYAN}     Configura in AWX: Administration → Execution Environments → Add${NC}"
+echo -e "${CYAN}     Poi segui: docs/AWX_SETUP.md${NC}"
 echo
 echo -e "${YELLOW}  📄 Credenziali salvate in: ${CYAN}${PWD_FILE}${NC}"
 echo
