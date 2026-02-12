@@ -67,6 +67,7 @@ data:
       systemMessage: "🚀 Kafka Lab Automation - Managed by JCasC"
       numExecutors: 0
       mode: EXCLUSIVE
+      slaveAgentPort: 50000
       securityRealm:
         local:
           allowsSignup: false
@@ -82,7 +83,7 @@ data:
             serverUrl: "https://kubernetes.default.svc"
             skipTlsVerify: true
             namespace: {{ .Release.Namespace | quote }}
-            jenkinsUrl: "http://jenkins:8080"
+            jenkinsUrl: "http://jenkins.{{ .Release.Namespace }}.svc.cluster.local:8080"
             templates:
               - name: "kafka-agent"
                 label: "kafka-agent"
@@ -106,12 +107,7 @@ data:
             definition {
               cpsScm {
                 scm {
-                  git {
-                    remote {
-                      url('https://github.com/gabri-souce/kafka-kube.git')
-                    }
-                    branch('main')
-                  }
+                  git('https://github.com/gabri-souce/kafka-kube.git', 'main')
                 }
                 scriptPath('jenkins/pipelines/01-manage-topic.groovy')
               }
@@ -122,12 +118,7 @@ data:
             definition {
               cpsScm {
                 scm {
-                  git {
-                    remote {
-                      url('https://github.com/gabri-souce/kafka-kube.git')
-                    }
-                    branch('main')
-                  }
+                  git('https://github.com/gabri-souce/kafka-kube.git', 'main')
                 }
                 scriptPath('jenkins/pipelines/02-manage-user.groovy')
               }
@@ -139,12 +130,7 @@ data:
             definition {
               cpsScm {
                 scm {
-                  git {
-                    remote {
-                      url('https://github.com/gabri-souce/kafka-kube.git')
-                    }
-                    branch('main')
-                  }
+                  git('https://github.com/gabri-souce/kafka-kube.git', 'main')
                 }
                 scriptPath('jenkins/pipelines/03-cluster-health.groovy')
               }
@@ -175,9 +161,12 @@ spec:
       containers:
         - name: jenkins
           image: {{ $j.image | default "jenkins/jenkins:lts-jdk17" | quote }}
+          ports:
+            - containerPort: 8080
+            - containerPort: 50000
           env:
             - name: JAVA_OPTS
-              value: "-Djenkins.install.runSetupWizard=false -Xmx1536m -Xms512m"
+              value: "-Djenkins.install.runSetupWizard=false -Xmx1536m -Xms512m -Djenkins.model.Jenkins.slaveAgentPort=50000"
             - name: CASC_JENKINS_CONFIG
               value: "/var/jenkins_config/casc.yaml"
             - name: JENKINS_ADMIN_PASSWORD
@@ -214,17 +203,6 @@ spec:
       port: 8080
       targetPort: 8080
       nodePort: {{ $j.service.nodePort | default 32000 }}
-  selector:
-    app: jenkins
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: jenkins-agent
-  namespace: {{ .Release.Namespace | quote }}
-spec:
-  type: ClusterIP
-  ports:
     - name: agent
       port: 50000
       targetPort: 50000
