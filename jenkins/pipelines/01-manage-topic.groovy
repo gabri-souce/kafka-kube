@@ -20,8 +20,6 @@ spec:
     options {
         timeout(time: 10, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        // Evita problemi Git
-        skipDefaultCheckout(false)
     }
 
     parameters {
@@ -30,7 +28,7 @@ spec:
         string(name: 'PARTITIONS', defaultValue: '3', description: 'Numero partizioni')
         string(name: 'REPLICAS', defaultValue: '3', description: 'Numero repliche')
         string(name: 'RETENTION_HOURS', defaultValue: '168', description: 'Retention (ore)')
-        string(name: 'CONFIRM_DELETE', defaultValue: '', description: 'Conferma nome per DELETE')
+        string(name: 'CONFIRM_DELETE', defaultValue: '', description: '⚠️ Solo per DELETE: riscrivi nome topic')
     }
 
     environment {
@@ -50,7 +48,7 @@ spec:
             }
         }
 
-        stage('Esecuzione Operazione') {
+        stage('Esecuzione') {
             steps {
                 container('kubectl') {
                     script {
@@ -58,7 +56,7 @@ spec:
                             def retentionMs = params.RETENTION_HOURS.toInteger() * 3600000
                             sh """
 cat <<EOF | kubectl apply -f -
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: ${params.TOPIC_NAME}
@@ -70,15 +68,14 @@ spec:
   partitions: ${params.PARTITIONS}
   replicas: ${params.REPLICAS}
   config:
-    retention.ms: "${retentionMs}"
-    segment.bytes: "1073741824"
-    min.insync.replicas: "2"
+    retention.ms: ${retentionMs}
+    segment.bytes: 1073741824
 EOF
 """
                             echo "⏳ Attesa riconciliazione Strimzi..."
-                            sleep 3
+                            sleep 5
                             sh "kubectl wait kafkatopic/${params.TOPIC_NAME} -n ${env.KAFKA_NAMESPACE} --for=condition=Ready --timeout=60s"
-                            echo "✅ Topic creato!"
+                            echo "✅ Topic '${params.TOPIC_NAME}' creato correttamente!"
                         } else {
                             sh "kubectl delete kafkatopic ${params.TOPIC_NAME} -n ${env.KAFKA_NAMESPACE} --ignore-not-found"
                             echo "✅ Topic eliminato!"
