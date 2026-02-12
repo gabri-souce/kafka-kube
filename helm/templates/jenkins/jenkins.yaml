@@ -94,10 +94,6 @@ data:
                     image: "bitnami/kubectl:latest"
                     command: "cat"
                     ttyEnabled: true
-                  - name: "ansible"
-                    image: "cytopia/ansible:latest"
-                    command: "cat"
-                    ttyEnabled: true
     unclassified:
       location:
         url: "http://localhost:32000/"
@@ -167,6 +163,16 @@ spec:
           env:
             - name: JAVA_OPTS
               value: "-Djenkins.install.runSetupWizard=false -Xmx1536m -Xms512m -Djenkins.model.Jenkins.slaveAgentPort=50000"
+            # --- FIX IDENTITÀ GIT VIA VARIABILI D'AMBIENTE (SICURO AL 100%) ---
+            - name: GIT_AUTHOR_NAME
+              value: "Jenkins Lab"
+            - name: GIT_AUTHOR_EMAIL
+              value: "jenkins@kafka-lab.local"
+            - name: GIT_COMMITTER_NAME
+              value: "Jenkins Lab"
+            - name: GIT_COMMITTER_EMAIL
+              value: "jenkins@kafka-lab.local"
+            # -----------------------------------------------------------------
             - name: CASC_JENKINS_CONFIG
               value: "/var/jenkins_config/casc.yaml"
             - name: JENKINS_ADMIN_PASSWORD
