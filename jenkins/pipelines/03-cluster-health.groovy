@@ -65,7 +65,6 @@ spec:
                         echo "🔌 KAFKA CLUSTER STATUS:"
                         sh "kubectl get kafka ${env.KAFKA_CLUSTER} -n ${env.KAFKA_NAMESPACE} -o jsonpath='{.status.conditions[0].type}: {.status.conditions[0].status}' && echo ''"
                         sh "kubectl get kafka ${env.KAFKA_CLUSTER} -n ${env.KAFKA_NAMESPACE} -o jsonpath='Kafka version: {.spec.kafka.version}' && echo ''"
-                        sh "kubectl get kafka ${env.KAFKA_CLUSTER} -n ${env.KAFKA_NAMESPACE} -o jsonpath='Listeners: {.status.listeners[*].name}' && echo ''"
                     }
                 }
             }
@@ -76,16 +75,11 @@ spec:
                 container('kubectl') {
                     script {
                         echo ""
-                        echo "📋 KAFKA TOPICS:"
+                        echo "📋 KAFKA TOPICS (K8s Resources):"
                         sh """
-kubectl get kafkatopic -n ${env.KAFKA_NAMESPACE} --no-headers | \
-  awk '{printf "  %-40s partitions=%-5s replicas=%-5s ready=%s\\n", \$1, \$3, \$4, \$5}' | sort
-"""
-                        def topicCount = sh(
-                            script: "kubectl get kafkatopic -n ${env.KAFKA_NAMESPACE} --no-headers | grep -v '^connect-' | wc -l | tr -d ' '",
-                            returnStdout: true
-                        ).trim()
-                        echo "  → Totale topic utente: ${topicCount}"
+                        kubectl get kafkatopic -n ${env.KAFKA_NAMESPACE} --no-headers | \
+                          awk '{printf "  %-40s partitions=%-5s replicas=%-5s ready=%s\\n", \$1, \$3, \$4, \$5}' | sort
+                        """
                     }
                 }
             }
@@ -98,39 +92,9 @@ kubectl get kafkatopic -n ${env.KAFKA_NAMESPACE} --no-headers | \
                         echo ""
                         echo "👥 KAFKA USERS:"
                         sh """
-kubectl get kafkauser -n ${env.KAFKA_NAMESPACE} --no-headers | \
-  awk '{printf "  %-30s auth=%-20s ready=%s\\n", \$1, \$3, \$5}' | sort
-"""
-                    }
-                }
-            }
-        }
-
-        stage('External Secrets Status') {
-            steps {
-                container('kubectl') {
-                    script {
-                        echo ""
-                        echo "🔐 EXTERNAL SECRETS (Vault sync):"
-                        sh """
-kubectl get externalsecrets -n ${env.KAFKA_NAMESPACE} --no-headers | \
-  awk '{printf "  %-35s status=%s ready=%s\\n", \$1, \$5, \$6}' | sort
-"""
-                    }
-                }
-            }
-        }
-
-        stage('PVC Status') {
-            steps {
-                container('kubectl') {
-                    script {
-                        echo ""
-                        echo "💾 PERSISTENT VOLUMES:"
-                        sh """
-kubectl get pvc -n ${env.KAFKA_NAMESPACE} --no-headers | \
-  awk '{printf "  %-40s status=%-10s size=%s\\n", \$1, \$2, \$4}' | sort
-"""
+                        kubectl get kafkauser -n ${env.KAFKA_NAMESPACE} --no-headers | \
+                          awk '{printf "  %-30s auth=%-20s ready=%s\\n", \$1, \$3, \$5}' | sort
+                        """
                     }
                 }
             }
@@ -144,10 +108,10 @@ kubectl get pvc -n ${env.KAFKA_NAMESPACE} --no-headers | \
                         echo ""
                         echo "📊 TOPIC LIST (da broker):"
                         sh """
-/opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server ${env.KAFKA_BOOTSTRAP} \
-  --list 2>/dev/null | grep -v '^__' | sort | sed 's/^/  /'
-"""
+                        /opt/kafka/bin/kafka-topics.sh \
+                          --bootstrap-server ${env.KAFKA_BOOTSTRAP} \
+                          --list 2>/dev/null | grep -v '^__' | sort | sed 's/^/  /'
+                        """
                     }
                 }
             }
@@ -162,10 +126,10 @@ kubectl get pvc -n ${env.KAFKA_NAMESPACE} --no-headers | \
                         echo "🔍 TOPIC DETAIL:"
                         def filter = params.TOPIC_FILTER?.trim() ? "--topic ${params.TOPIC_FILTER}" : ""
                         sh """
-/opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server ${env.KAFKA_BOOTSTRAP} \
-  --describe ${filter} 2>/dev/null | grep -v '^__' | head -100
-"""
+                        /opt/kafka/bin/kafka-topics.sh \
+                          --bootstrap-server ${env.KAFKA_BOOTSTRAP} \
+                          --describe ${filter} 2>/dev/null | grep -v '^__' | head -100
+                        """
                     }
                 }
             }
@@ -179,16 +143,16 @@ kubectl get pvc -n ${env.KAFKA_NAMESPACE} --no-headers | \
                         echo ""
                         echo "📉 CONSUMER GROUP LAG:"
                         sh """
-/opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server ${env.KAFKA_BOOTSTRAP} \
-  --list 2>/dev/null | while read group; do
-    echo "  Group: \$group"
-    /opt/kafka/bin/kafka-consumer-groups.sh \
-      --bootstrap-server ${env.KAFKA_BOOTSTRAP} \
-      --describe --group "\$group" 2>/dev/null | grep -v '^GROUP' | \
-      awk '{printf "    topic=%-30s partition=%-5s lag=%s\\n", \$2, \$3, \$6}' || true
-done
-"""
+                        /opt/kafka/bin/kafka-consumer-groups.sh \
+                          --bootstrap-server ${env.KAFKA_BOOTSTRAP} \
+                          --list 2>/dev/null | while read group; do
+                            echo "  Group: \$group"
+                            /opt/kafka/bin/kafka-consumer-groups.sh \
+                              --bootstrap-server ${env.KAFKA_BOOTSTRAP} \
+                              --describe --group "\$group" 2>/dev/null | grep -v '^GROUP' | \
+                              awk '{printf "    topic=%-30s partition=%-5s lag=%s\\n", \$2, \$3, \$6}' || true
+                        done
+                        """
                     }
                 }
             }
@@ -205,11 +169,12 @@ done
 
                         def issues = 0
 
-                        // Controlla pod non running
+                        // Check pods
                         def badPods = sh(
                             script: "kubectl get pods -n ${env.KAFKA_NAMESPACE} --no-headers | grep -v 'Running\\|Completed' | wc -l | tr -d ' '",
                             returnStdout: true
                         ).trim().toInteger()
+                        
                         if (badPods > 0) {
                             echo "  ⚠️  ${badPods} pod non in stato Running!"
                             issues++
@@ -217,4 +182,35 @@ done
                             echo "  ✅ Tutti i pod Running"
                         }
 
-                        // Contr
+                        // Check Kafka
+                        def kafkaReady = sh(
+                            script: "kubectl get kafka ${env.KAFKA_CLUSTER} -n ${env.KAFKA_NAMESPACE} -o jsonpath='{.status.conditions[0].status}' 2>/dev/null || echo 'False'",
+                            returnStdout: true
+                        ).trim()
+
+                        if (kafkaReady == 'True') {
+                            echo "  ✅ Kafka cluster Ready"
+                        } else {
+                            echo "  ⚠️  Kafka cluster non Ready!"
+                            issues++
+                        }
+
+                        echo ""
+                        if (issues == 0) {
+                            echo "  🟢 CLUSTER SANO - Nessun problema rilevato"
+                        } else {
+                            echo "  🔴 ATTENZIONE - ${issues} problema/i rilevato/i"
+                            currentBuild.result = 'UNSTABLE'
+                        }
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success { echo "✅ Health check completato con successo" }
+        failure { echo "❌ Health check fallito" }
+    }
+}
