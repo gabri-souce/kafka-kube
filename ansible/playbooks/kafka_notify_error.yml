@@ -1,0 +1,67 @@
+---
+- name: Kafka Error Report
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  tasks:
+
+    - name: Banner Errore
+      debug:
+        msg:
+          - "�� ============================================"
+          - "🔴   KAFKA HEALTH CHECK - FALLITO!"
+          - "🔴 ============================================"
+          - "   Cluster:   {{ kafka_cluster_name }}"
+          - "   Namespace: {{ k8s_namespace }}"
+          - "🔴 ============================================"
+
+    - name: Raccogli stato pod
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+      register: all_pods
+      ignore_errors: true
+
+    - name: Mostra pod in errore
+      debug:
+        msg: "❌ POD IN ERRORE: {{ item.metadata.name }} → {{ item.status.phase }}"
+      loop: "{{ all_pods.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when: item.status.phase not in ['Running', 'Succeeded']
+
+    - name: Raccogli stato Kafka
+      kubernetes.core.k8s_info:
+        api_version: kafka.strimzi.io/v1beta2
+        kind: Kafka
+        name: "{{ kafka_cluster_name }}"
+        namespace: "{{ k8s_namespace }}"
+      register: kafka_status
+      ignore_errors: true
+
+    - name: Mostra condizioni Kafka
+      debug:
+        msg: "⚠️  KAFKA: {{ item.type }} = {{ item.status }} ({{ item.message | default('nessun messaggio') }})"
+      loop: "{{ kafka_status.resources[0].status.conditions | default([]) }}"
+      loop_control:
+        label: "{{ item.type }}"
+      ignore_errors: true
+
+    - name: Report Finale
+      debug:
+        msg:
+          - "🔴 ============================================"
+          - "   AZIONE RICHIESTA:"
+          - "   kubectl get pods -n {{ k8s_namespace }}"
+          - "   kubectl describe pod <nome-pod> -n {{ k8s_namespace }}"
+          - "   kubectl logs <nome-pod> -n {{ k8s_namespace }}"
+          - "🔴 ============================================"
+
+    - name: Forza fallimento per visibilità in AWX
+      fail:
+        msg: "Health Check fallito - vedi dettagli sopra"
