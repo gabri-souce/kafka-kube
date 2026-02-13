@@ -1,160 +1,113 @@
-# 🚀 Kafka Lab - Production-Ready Environment
+# Kafka Lab — Production-Ready Environment
 
-**Ambiente completo Kafka con Vault, External Secrets, Monitoring, e CI/CD**
+Ambiente Kafka enterprise-grade su Kubernetes con secret management, CI/CD, monitoring e automazione.
 
-## 🎯 Caratteristiche
+## Stack
 
-✅ **Kafka Cluster** - 3 broker in KRaft mode (no ZooKeeper)  
-✅ **HashiCorp Vault** - Gestione centralizzata secret  
-✅ **External Secrets Operator** - Sync automatico Vault → Kubernetes  
-✅ **Strimzi Operator** - Gestione Kafka-as-Code  
-✅ **Monitoring Stack** - Prometheus + Grafana  
-✅ **CI/CD** - Jenkins con pipelines preconfigurate  
-✅ **Automation** - AWX (Ansible Tower open-source)  
-✅ **Kafka UI** - Interfaccia web per management  
-✅ **Kafka Connect** - Integrazione dati  
-✅ **Cruise Control** - Rebalancing automatico  
+| Componente | Tecnologia | URL |
+|---|---|---|
+| Kafka Cluster | Apache Kafka 4.0 · KRaft · 3 broker | interno |
+| Secret Management | HashiCorp Vault + External Secrets Operator | http://localhost:30372 |
+| Kafka UI | Kafka UI | http://localhost:30080 |
+| Monitoring | Prometheus + Grafana + Kafka Exporter | :30090 / :30030 |
+| CI/CD | Jenkins | http://localhost:32000 |
+| Automation | AWX (Ansible Tower OSS) | http://localhost:30043 |
+| Data Integration | Kafka Connect + Cruise Control | interno |
 
 ---
 
-## 🚀 Quick Start
-
-### Deploy Automatico (Consigliato)
+## Quick Start
 
 ```bash
-# 1. Pulisci eventuali installazioni precedenti
-./cleanup.sh
-
-# 2. Deploy completo
-./deploy.sh
+./deploy.sh      # installa tutto (~10-15 minuti)
+./cleanup.sh     # rimuove tutto
 ```
 
-**Tempo stimato:** 10-15 minuti
+Lo script chiede una password unica usata per tutti i servizi.
+Le credenziali vengono salvate in `scripts/vault/vault-passwords-TIMESTAMP.txt`.
 
 ---
 
-## 📊 Accesso alle UI
-
-Dopo l'installazione:
+## Accesso alle UI
 
 | Servizio | URL | Credenziali |
-|----------|-----|-------------|
-| **Kafka UI** | http://localhost:30080 | Nessuna |
-| **Grafana** | http://localhost:30030 | admin / (vedi password file) |
-| **Jenkins** | http://localhost:32000 | admin / (vedi password file) |
-| **Prometheus** | http://localhost:30090 | Nessuna |
-
-**File password:** `scripts/vault/vault-passwords-TIMESTAMP.txt`
-
----
-
-## 📚 Documentazione
-
-- **[INSTALL.md](INSTALL.md)** - Installazione manuale passo-passo
-- **[docs/](docs/)** - Documentazione completa
-- **[examples/](examples/)** - Esempi configurazione
-
----
-
-## 🧪 Test Rapido
+|---|---|---|
+| Kafka UI | http://localhost:30080 | — |
+| Grafana | http://localhost:30030 | admin / file passwords |
+| Jenkins | http://localhost:32000 | admin / file passwords |
+| Prometheus | http://localhost:30090 | — |
+| Vault | http://localhost:30372 | token: `root` |
+| AWX | http://localhost:30043 | vedi sotto |
 
 ```bash
-# Crea topic
-kubectl -n kafka-lab apply -f - <<EOF
-apiVersion: kafka.strimzi.io/v1beta2
-kind: KafkaTopic
-metadata:
-  name: test-topic
-  labels:
-    strimzi.io/cluster: kafka-cluster
-spec:
-  partitions: 3
-  replicas: 3
-EOF
-
-# Producer
-kubectl -n kafka-lab run kafka-producer -ti \
-  --image=quay.io/strimzi/kafka:0.44.0-kafka-4.0.0 \
-  --rm=true --restart=Never -- \
-  bin/kafka-console-producer.sh \
-  --bootstrap-server kafka-cluster-kafka-bootstrap:9092 \
-  --topic test-topic
-
-# Consumer (in un altro terminale)
-kubectl -n kafka-lab run kafka-consumer -ti \
-  --image=quay.io/strimzi/kafka:0.44.0-kafka-4.0.0 \
-  --rm=true --restart=Never -- \
-  bin/kafka-console-consumer.sh \
-  --bootstrap-server kafka-cluster-kafka-bootstrap:9092 \
-  --topic test-topic \
-  --from-beginning
+# Password AWX
+kubectl get secret awx-admin-password -n kafka-lab -o jsonpath="{.data.password}" | base64 -d
 ```
 
----
-
-## 🔧 Comandi Utili
-
-```bash
-# Status pods
-kubectl -n kafka-lab get pods
-
-# Kafka topics
-kubectl -n kafka-lab get kafkatopic
-
-# Kafka users
-kubectl -n kafka-lab get kafkauser
-
-# External secrets
-kubectl -n kafka-lab get externalsecrets
-
-# Logs Kafka broker
-kubectl -n kafka-lab logs kafka-cluster-kafka-nodes-0
-```
+> **Grafana:** importa dashboard ID `7589` per monitoring Kafka completo.
+> **AWX:** configurazione manuale una tantum → [docs/AWX_SETUP.md](docs/AWX_SETUP.md)
 
 ---
 
-## 🗑️ Pulizia
+## ⚠️ Dopo un Restart di Docker Desktop
 
-```bash
-./cleanup.sh
-```
-
----
-
-## 🛠️ Troubleshooting
-
-Vedi **[INSTALL.md#troubleshooting](INSTALL.md#troubleshooting)**
-
----
-
-## ✅ Cosa è stato FIXATO
-
-Rispetto alla versione precedente:
-
-1. ✅ **Vault path corretto** - `secret` invece di `secret/data/kafka`
-2. ✅ **Kubernetes auth** - Usa credenziali del pod Vault
-3. ✅ **Script automatizzati** - Deploy e cleanup in un comando
-4. ✅ **Documentazione completa** - Guide passo-passo
-5. ✅ **Testing incluso** - Esempi pronti all'uso
-
----
-
-**Pronto per il deploy!** 🎉
-
----
-
-## ⚠️ Dopo un Restart di Docker Desktop / Mac Sleep
-
-Vault gira in **dev mode** (dati in memoria) — si svuota ad ogni restart del pod.
-Quando ESO mostra `SecretSyncedError` o Kafka UI non si connette, esegui:
+Vault gira in dev mode — i dati sono in RAM e si perdono ad ogni restart del pod.
+Quando `kubectl get externalsecret -n kafka-lab` mostra `SecretSyncedError`:
 
 ```bash
 ./scripts/vault/vault-reinit.sh
 ```
 
-Lo script ripristina tutto in ~30 secondi:
-- Ricarica i secret in Vault
-- Riconfigura il Kubernetes auth
-- Forza la risincronizzazione di ESO
-- Riavvia Kafka UI
+Ripristina tutto in ~30 secondi.
 
+---
+
+## Test Rapido
+
+```bash
+# Entra nel broker
+kubectl exec -it kafka-cluster-kafka-nodes-0 -n kafka-lab -- bash
+
+# Crea file autenticazione (va ricreato ad ogni accesso al pod)
+cat > /tmp/admin.properties << 'EOF'
+security.protocol=SASL_PLAINTEXT
+sasl.mechanism=SCRAM-SHA-512
+sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required \
+  username="admin" \
+  password="LA-TUA-PASSWORD";
+EOF
+
+# Crea topic
+bin/kafka-topics.sh --bootstrap-server kafka-cluster-kafka-bootstrap:9092 \
+  --command-config /tmp/admin.properties \
+  --create --topic test --partitions 3 --replication-factor 3
+
+# Lista topic
+bin/kafka-topics.sh --bootstrap-server kafka-cluster-kafka-bootstrap:9092 \
+  --command-config /tmp/admin.properties --list
+```
+
+---
+
+## Comandi Utili
+
+```bash
+kubectl get pods -n kafka-lab                           # status cluster
+kubectl get externalsecret -n kafka-lab                 # ESO sincronizzato?
+kubectl get kafkatopic -n kafka-lab                     # topic esistenti
+kubectl get kafkauser -n kafka-lab                      # utenti Kafka
+kubectl logs kafka-cluster-kafka-nodes-0 -n kafka-lab   # log broker
+```
+
+---
+
+## Documentazione
+
+| File | Contenuto |
+|---|---|
+| [INSTALL.md](INSTALL.md) | Installazione manuale step-by-step |
+| [docs/AWX_SETUP.md](docs/AWX_SETUP.md) | Configurazione AWX (una tantum) |
+| [docs/JENKINS_GUIDE.md](docs/JENKINS_GUIDE.md) | Uso pipeline Jenkins |
+| [docs/VAULT_SETUP_GUIDE.md](docs/VAULT_SETUP_GUIDE.md) | Architettura Vault + ESO |
+| [docs/guides/KAFKA_DEPLOYMENT.md](docs/guides/KAFKA_DEPLOYMENT.md) | Deployment Kafka dettagliato |
+| [esercizi/](esercizi/) | Esercizi pratici Kafka |

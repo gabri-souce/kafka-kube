@@ -1,26 +1,41 @@
-# Kafka Lab Helm Chart
+# Helm Chart — Kafka Lab
 
-## Prerequisites
+## Prerequisiti
 
 - Kubernetes 1.25+
-- Strimzi Operator 0.50.0
+- Strimzi Operator installato (lo installa `deploy.sh`)
+- External Secrets Operator installato (lo installa `deploy.sh`)
+- Vault configurato (lo installa `deploy.sh`)
 
-## Install
+## Deploy
 
 ```bash
-# 1. Install Strimzi Operator first
-helm repo add strimzi https://strimzi.io/charts/
-helm upgrade --install strimzi-operator strimzi/strimzi-kafka-operator \
-  -n kafka-lab \
-  --version 0.50.0 \
-  --set watchNamespaces="{kafka-lab}"
+# Metodo consigliato: usa deploy.sh dalla root del progetto
+./deploy.sh
 
-# 2. Install this chart
-helm repo add awx-operator https://ansible-community.github.io/awx-operator-helm/
-helm dependency update
-helm install kafka-lab . -n kafka-lab
+# Oppure manualmente
+helm install kafka-lab ./helm -n kafka-lab --timeout 15m
+helm upgrade kafka-lab ./helm -n kafka-lab
+helm uninstall kafka-lab -n kafka-lab
 ```
 
-## Values
+## Configurazione
 
-See `values.yaml` for configuration options.
+Tutto è configurabile in `values.yaml`. Componenti abilitabili/disabilitabili:
+
+```yaml
+kafka.enabled: true
+kafkaConnect.enabled: true
+kafkaExporter.enabled: true   # metriche consumer lag per Grafana
+monitoring.enabled: true
+jenkins.enabled: true
+awx.enabled: true
+kafkaUi.enabled: true
+vault.enabled: true
+```
+
+## Note
+
+- Le password NON sono in `values.yaml` — vengono tutte da Vault tramite ESO
+- Il Kafka Exporter usa `scram-sha512` (senza trattino) — formato richiesto da danielqsj/kafka-exporter
+- Il nodePool si chiama `kafka-nodes` — i pod Strimzi KRaft hanno il suffisso `-nodes` nel DNS
