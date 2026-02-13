@@ -31,8 +31,14 @@ spec:
               value: "SASL_PLAINTEXT"
             - name: KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM
               value: "SCRAM-SHA-512"
+            # Password letta dal Secret Kubernetes sincronizzato da Vault via ESO
+            - name: KAFKA_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: admin-password
+                  key: password
             - name: KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG
-              value: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="admin" password="admin-secret";'
+              value: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="admin" password="$(KAFKA_ADMIN_PASSWORD)";'
           resources:
             requests:
               memory: "256Mi"

@@ -143,6 +143,8 @@ kubectl create namespace $VAULT_NAMESPACE 2>/dev/null || true
 # Crea values file con NodePort fisso
 cat > /tmp/vault-values.yaml << EOF
 server:
+  # Modalità dev: dati in memoria (si perdono al restart del pod)
+  # Per il lab è accettabile - il deploy.sh ricarica tutto automaticamente
   dev:
     enabled: true
     devRootToken: "root"

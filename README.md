@@ -140,3 +140,21 @@ Rispetto alla versione precedente:
 ---
 
 **Pronto per il deploy!** 🎉
+
+---
+
+## ⚠️ Dopo un Restart di Docker Desktop / Mac Sleep
+
+Vault gira in **dev mode** (dati in memoria) — si svuota ad ogni restart del pod.
+Quando ESO mostra `SecretSyncedError` o Kafka UI non si connette, esegui:
+
+```bash
+./scripts/vault/vault-reinit.sh
+```
+
+Lo script ripristina tutto in ~30 secondi:
+- Ricarica i secret in Vault
+- Riconfigura il Kubernetes auth
+- Forza la risincronizzazione di ESO
+- Riavvia Kafka UI
+
